@@ -1,0 +1,339 @@
+﻿{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "dnsName": {
+      "type": "string",
+      "metadata": {
+        "description": "Connect to you cluster using dnsName.location.cloudapp.azure.com"
+      }
+    },
+    "vmUserName": {
+      "type": "string",
+      "metadata": {
+        "description": "user name to ssh to the vm"
+      }
+
+    },
+    "vmPassword": {
+      "type": "securestring",
+      "metadata": {
+        "description": "password to ssh to the vm"
+      }
+    },
+    "mysqlRootPassword": {
+      "type": "securestring",
+      "metadata": {
+        "description": "mysql root user password single quote not allowed"
+      }
+    },
+    "vmSize": {
+      "type": "string",
+      "defaultValue": "Standard_A3",
+      "metadata": {
+        "description": "size for the vm"
+      }
+    },
+    "stroageAccountName": {
+      "type": "string",
+      "metadata": {
+        "description": "storage account name "
+      }
+    },
+    "storageAccountType": {
+      "type": "string",
+      "defaultValue": "Standard_LRS",
+      "metadata": {
+        "description": "storage account type for the cluster"
+      }
+    },
+    "virtualNetworkName": {
+      "type": "string",
+      "defaultValue": "nylinuxvnet",
+      "metadata": {
+        "description": "Virtual network name for the cluster"
+      }
+    },
+    "vnetNewOrExisting": {
+      "type": "string",
+      "defaultValue": "new",
+      "allowedValues": [
+        "new",
+        "existing"
+      ],
+      "metadata": {
+        "description": "Identifies whether to use new or existing Virtual Network"
+      }
+    },
+    "dbSubnetName": {
+      "type": "string",
+      "defaultValue": "dbsubnet",
+      "metadata": {
+        "description": "subnet name for the mysql nodes"
+      }
+    },
+    "vnetAddressPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.0.0/22",
+      "metadata": {
+        "description": "IP address in CIDR for virtual network"
+      }
+    },
+    "dbSubnetAddressPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.1.0/24",
+      "metadata": {
+        "description": "IP address in CIDR for db subnet"
+      }
+    },
+      "nystorage01Type": {
+          "type": "string",
+          "defaultValue": "Standard_LRS",
+          "allowedValues": [
+              "Standard_LRS",
+              "Standard_ZRS",
+              "Standard_GRS",
+              "Standard_RAGRS",
+              "Premium_LRS"
+          ]
+      },
+      "nylinuxmysql01Name": {
+          "type": "string",
+          "minLength": 1
+      },
+      "nylinuxmysql01AdminUserName": {
+          "type": "string",
+          "minLength": 1
+      },
+      "nylinuxmysql01AdminPassword": {
+          "type": "securestring"
+      },
+      "nylinuxmysql01UbuntuOSVersion": {
+          "type": "string",
+          "defaultValue": "14.04.2-LTS",
+          "allowedValues": [
+              "12.04.5-LTS",
+              "14.04.2-LTS"
+          ]
+      },
+      "nyavsettingName": {
+          "type": "string",
+          "minLength": 1
+      },
+      "_artifactsLocation": {
+          "type": "string",
+          "metadata": {
+              "description": "Auto-generated container in staging storage account to receive post-build staging folder upload"
+          }
+      },
+      "_artifactsLocationSasToken": {
+          "type": "securestring",
+          "metadata": {
+              "description": "Auto-generated token to access _artifactsLocation"
+          }
+      },
+      "nylinuxmysqlautoscaleDnsName": {
+          "type": "string",
+          "minLength": 1
+      }
+
+  },
+  "variables": {
+      "nystorage01Name": "[concat('nystorage01', uniqueString(resourceGroup().id))]",
+      "nyvnet01Prefix": "10.0.0.0/16",
+      "nyvnet01Subnet1Name": "Subnet-1",
+      "nyvnet01Subnet1Prefix": "10.0.0.0/24",
+      "nyvnet01Subnet2Name": "Subnet-2",
+      "nyvnet01Subnet2Prefix": "10.0.1.0/24",
+      "nylinuxmysql01ImagePublisher": "Canonical",
+      "nylinuxmysql01ImageOffer": "UbuntuServer",
+      "nylinuxmysql01OSDiskName": "nylinuxmysql01OSDisk",
+      "nylinuxmysql01VmSize": "Standard_D2_v2",
+      "nylinuxmysql01VnetID": "[resourceId('Microsoft.Network/virtualNetworks', 'nyvnet01')]",
+      "nylinuxmysql01SubnetRef": "[concat(variables('nylinuxmysql01VnetID'), '/subnets/', variables('nyvnet01Subnet1Name'))]",
+      "nylinuxmysql01StorageAccountContainerName": "vhds",
+      "nylinuxmysql01NicName": "[concat(parameters('nylinuxmysql01Name'), 'NetworkInterface')]",
+      "nylinuxmysqlextensionScriptFolder": "CustomScripts",
+      "nylinuxmysqlextensionScriptFileName": "nylinuxmysqlextension.sh",
+      "nylinuxmysqlautoscaleName": "nylinuxmysqlautoscale"
+  },
+  "resources": [
+      {
+          "name": "[variables('nystorage01Name')]",
+          "type": "Microsoft.Storage/storageAccounts",
+          "location": "[resourceGroup().location]",
+          "apiVersion": "2015-06-15",
+          "dependsOn": [ ],
+          "tags": {
+              "displayName": "nystorage01"
+          },
+          "properties": {
+              "accountType": "[parameters('nystorage01Type')]"
+          }
+      },
+      {
+          "name": "nyvnet01",
+          "type": "Microsoft.Network/virtualNetworks",
+          "location": "[resourceGroup().location]",
+          "apiVersion": "2015-06-15",
+          "dependsOn": [ ],
+          "tags": {
+              "displayName": "nyvnet01"
+          },
+          "properties": {
+              "addressSpace": {
+                  "addressPrefixes": [
+                      "[variables('nyvnet01Prefix')]"
+                  ]
+              },
+              "subnets": [
+                  {
+                      "name": "[variables('nyvnet01Subnet1Name')]",
+                      "properties": {
+                          "addressPrefix": "[variables('nyvnet01Subnet1Prefix')]"
+                      }
+                  },
+                  {
+                      "name": "[variables('nyvnet01Subnet2Name')]",
+                      "properties": {
+                          "addressPrefix": "[variables('nyvnet01Subnet2Prefix')]"
+                      }
+                  }
+              ]
+          }
+      },
+      {
+          "name": "[variables('nylinuxmysql01NicName')]",
+          "type": "Microsoft.Network/networkInterfaces",
+          "location": "[resourceGroup().location]",
+          "apiVersion": "2015-06-15",
+          "dependsOn": [
+              "[resourceId('Microsoft.Network/virtualNetworks', 'nyvnet01')]",
+              "[resourceId('Microsoft.Network/publicIPAddresses', variables('nylinuxmysqlautoscaleName'))]"
+          ],
+          "tags": {
+              "displayName": "nylinuxmysql01Nic"
+          },
+          "properties": {
+              "ipConfigurations": [
+                  {
+                      "name": "ipconfig1",
+                      "properties": {
+                          "privateIPAllocationMethod": "Dynamic",
+                          "subnet": {
+                              "id": "[variables('nylinuxmysql01SubnetRef')]"
+                          },
+                          "publicIPAddress": {
+                              "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('nylinuxmysqlautoscaleName'))]"
+                          }
+                      }
+                  }
+              ]
+          }
+      },
+      {
+          "name": "[parameters('nylinuxmysql01Name')]",
+          "type": "Microsoft.Compute/virtualMachines",
+          "location": "[resourceGroup().location]",
+          "apiVersion": "2015-06-15",
+          "dependsOn": [
+              "[resourceId('Microsoft.Storage/storageAccounts', variables('nystorage01Name'))]",
+              "[resourceId('Microsoft.Network/networkInterfaces', variables('nylinuxmysql01NicName'))]"
+          ],
+          "tags": {
+              "displayName": "nylinuxmysql01"
+          },
+          "properties": {
+              "hardwareProfile": {
+                  "vmSize": "[variables('nylinuxmysql01VmSize')]"
+              },
+              "osProfile": {
+                  "computerName": "[parameters('nylinuxmysql01Name')]",
+                  "adminUsername": "[parameters('nylinuxmysql01AdminUsername')]",
+                  "adminPassword": "[parameters('nylinuxmysql01AdminPassword')]"
+              },
+              "storageProfile": {
+                  "imageReference": {
+                      "publisher": "[variables('nylinuxmysql01ImagePublisher')]",
+                      "offer": "[variables('nylinuxmysql01ImageOffer')]",
+                      "sku": "[parameters('nylinuxmysql01UbuntuOSVersion')]",
+                      "version": "latest"
+                  },
+                  "osDisk": {
+                      "name": "nylinuxmysql01OSDisk",
+                      "vhd": {
+                          "uri": "[concat('https://', variables('nystorage01Name'), '.blob.core.windows.net/', variables('nylinuxmysql01StorageAccountContainerName'), '/', variables('nylinuxmysql01OSDiskName'), '.vhd')]"
+                      },
+                      "caching": "ReadWrite",
+                      "createOption": "FromImage"
+                  }
+              },
+              "networkProfile": {
+                  "networkInterfaces": [
+                      {
+                          "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('nylinuxmysql01NicName'))]"
+                      }
+                  ]
+              }
+          },
+          "resources": [
+              {
+                  "name": "nylinuxmysqlextension",
+                  "type": "extensions",
+                  "location": "[resourceGroup().location]",
+                  "apiVersion": "2015-06-15",
+                  "dependsOn": [
+                      "[resourceId('Microsoft.Compute/virtualMachines', parameters('nylinuxmysql01Name'))]"
+                  ],
+                  "tags": {
+                      "displayName": "nylinuxmysqlextension"
+                  },
+                  "properties": {
+                      "publisher": "Microsoft.OSTCExtensions",
+                      "type": "CustomScriptForLinux",
+                      "typeHandlerVersion": "1.4",
+                      "autoUpgradeMinorVersion": true,
+                      "settings": {
+                          "fileUris": [
+                              "[concat(parameters('_artifactsLocation'), '/', variables('nylinuxmysqlextensionScriptFolder'), '/', variables('nylinuxmysqlextensionScriptFileName'), parameters('_artifactsLocationSasToken'))]"
+                          ],
+                          "commandToExecute": "[concat('sh ', variables('nylinuxmysqlextensionScriptFileName'))]"
+                      }
+                  }
+              }
+          ]
+      },
+      {
+          "name": "[parameters('nyavsettingName')]",
+          "type": "Microsoft.Compute/availabilitySets",
+          "location": "[resourceGroup().location]",
+          "apiVersion": "2015-06-15",
+          "dependsOn": [ ],
+          "tags": {
+              "displayName": "nyavsetting"
+          },
+          "properties": {
+              "platformUpdateDomainCount": 1,
+              "platformFaultDomainCount": 1
+          }
+      },
+      {
+          "name": "[variables('nylinuxmysqlautoscaleName')]",
+          "type": "Microsoft.Network/publicIPAddresses",
+          "location": "[resourceGroup().location]",
+          "apiVersion": "2015-06-15",
+          "dependsOn": [ ],
+          "tags": {
+              "displayName": "nylinuxmysqlautoscale"
+          },
+          "properties": {
+              "publicIPAllocationMethod": "Dynamic",
+              "dnsSettings": {
+                  "domainNameLabel": "[parameters('nylinuxmysqlautoscaleDnsName')]"
+              }
+          }
+      }
+  ],
+  "outputs": {
+  }
+}
